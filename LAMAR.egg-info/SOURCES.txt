@@ -71,4 +71,6 @@ lamar/scripts/data/labels_classes_priors/synthseg_segmentation_names.npy
 lamar/scripts/data/labels_classes_priors/synthseg_segmentation_names_2.0.npy
 lamar/scripts/data/labels_classes_priors/synthseg_topological_classes.npy
 lamar/scripts/data/labels_classes_priors/synthseg_topological_classes_2.0.npy
+lamar/utils/__init__.py
+lamar/utils/file_splitter.py
 tests/test_full_pipeline.py

@@ -150,6 +150,14 @@ def main():
         "--fixed-parc", required=True, help="Output path for fixed image parcellation"
     )
     register_parser.add_argument(
+        "--skip-segment-moving", action="store_true", help="Skip segmentation of moving image."
+    )
+    register_parser.add_argument(
+        "--skip-segment-fixed", action="store_true", help="Skip segmentation of fixed image."
+    )
+
+
+    register_parser.add_argument(
         "--registered-parc",
         required=True,
         help="Output path for registered parcellation",
@@ -321,6 +329,8 @@ def main():
             registration_method=args.registration_method,
             synthseg_threads=args.synthseg_threads,
             ants_threads=args.ants_threads,
+            skip_segment_moving=args.skip_segment_moving,
+            skip_segment_fixed=args.skip_segment_fixed,
         )
     elif args.command == "generate-warpfield":
         lamareg(
@@ -338,6 +348,8 @@ def main():
             registration_method=args.registration_method,
             synthseg_threads=args.synthseg_threads,
             ants_threads=args.ants_threads,
+            skip_segment_moving=args.skip_segment_moving,
+            skip_segment_fixed=args.skip_segment_fixed,
         )
     elif args.command == "apply-warpfield":
         lamareg(

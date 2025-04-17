@@ -108,50 +108,85 @@ def ants_linear_nonlinear_registration(
         affine_file=None,
         rev_warp_file=None,
         rev_affine_file=None,
-        registration_method="SyNRA"
+        registration_method="SyNRA",
+        second_moving_file=None,
+        second_fixed_file=None,
+        metric_weights=[1.0, 1.0]  # Weights for each image pair
 ):
-    """Perform linear (rigid + affine) and nonlinear registration using ANTsPy.
-
-    This function performs registration between two images using ANTs' SyNRA transform,
-    which includes both linear (rigid + affine) and nonlinear (SyN) components.
-    The registered image is saved to the specified output path, and the transform
-    files can optionally be saved as well.
-
-    Args:
-        fixed_file (str): Path to the fixed/reference image.
-        moving_file (str): Path to the moving image that will be registered.
-        out_file (str, optional): Path where the registered image will be saved.
-            Defaults to "registered_image.nii".
-        warp_file (str, optional): Path to save the forward warp field.
-            Defaults to None.
-        affine_file (str, optional): Path to save the forward affine transform.
-            Defaults to None.
-        rev_warp_file (str, optional): Path to save the reverse warp field.
-            Defaults to None.
-        rev_affine_file (str, optional): Path to save the reverse affine transform.
-            Defaults to None.
-
-    Returns:
-        None: The function saves the registered image and transform files to disk
-        but does not return any values.
+    """Perform registration using single or multiple image pairs.
+    
+    When second_moving_file and second_fixed_file are provided, performs
+    multi-channel registration that optimizes alignment for both image pairs
+    simultaneously, generating a single set of transforms.
     """
-    # Load images
+    # Load primary images
     fixed = ants.image_read(fixed_file)
     moving = ants.image_read(moving_file)
+    
+    # Check if we're doing multi-channel registration
+    if second_moving_file and second_fixed_file:
+        moving2 = ants.image_read(second_moving_file)
+        fixed2 = ants.image_read(second_fixed_file)
+        
+        print("Performing multi-channel registration with both image pairs...")
+        
+        # Set up multi-metric registration
+        fixed_images = [fixed, fixed2]
+        moving_images = [moving, moving2]
+        metrics = ['mattes', 'mattes']  # Mutual information for both pairs
+        
+        # We need to normalize weights
+        norm_weights = [w / sum(metric_weights) for w in metric_weights]
+        
+        # Configure the multi-metric registration
+        multivariate_extras = {
+            'metrics': metrics,
+            'fixed_images': fixed_images,
+            'moving_images': moving_images,
+            'weights': norm_weights
+        }
+        
+        # Run registration with multi-metric approach
+        transforms = ants.registration(
+            fixed=fixed,  # Primary fixed image (needed but multimetric takes precedence)
+            moving=moving,  # Primary moving image
+            type_of_transform=registration_method,
+            multivariate_extras=multivariate_extras
+        )
+        
+        # Apply transforms to both moving images
+        registered = ants.apply_transforms(
+            fixed=fixed, 
+            moving=moving,
+            transformlist=transforms["fwdtransforms"],
+            interpolator="nearestNeighbor"
+        )
+        
+        # Save the primary registered image
+        ants.image_write(registered, out_file)
+        print(f"Registration complete. Saved registered image as {out_file}")
+        
+    else:
+        # Standard single-channel registration
+        transforms = ants.registration(
+            fixed=fixed, 
+            moving=moving, 
+            type_of_transform=registration_method
+        )
+        
+        # Apply transforms
+        registered = ants.apply_transforms(
+            fixed=fixed, 
+            moving=moving, 
+            transformlist=transforms["fwdtransforms"],
+            interpolator="nearestNeighbor"
+        )
+        
+        # Save the registered image
+        ants.image_write(registered, out_file)
+        print(f"Registration complete. Saved registered image as {out_file}")
 
-    # 'SyN' transform includes both linear and nonlinear registration.
-    transforms = ants.registration(fixed=fixed, moving=moving, type_of_transform=registration_method)
-
-    # The result of the registration is a dictionary containing, among other keys:
-    registered = ants.apply_transforms(fixed=fixed, moving=moving, transformlist=transforms["fwdtransforms"],
-                                       interpolator="nearestNeighbor")
-
-    # Save the registered moving image
-    ants.image_write(registered, out_file)
-    print(f"Registration complete. Saved registered image as {out_file}")
-
-    # If specified, save the transform files
-    # Typically, transforms["fwdtransforms"][0] is the warp field, and [1] is the affine.
+    # Save transform files as before
     if warp_file:
         shutil.copyfile(transforms["fwdtransforms"][0], warp_file)
         print(f"Saved warp field as {warp_file}")
@@ -169,8 +204,9 @@ def ants_linear_nonlinear_registration(
 def main():
     """Entry point for command-line use"""
     parser = argparse.ArgumentParser(description="Coregistration tool")
-    parser.add_argument("--fixed-file", required=True, help="Fixed image file path")
-    parser.add_argument("--moving-file", required=True, help="Moving image file path")
+    # Existing arguments
+    parser.add_argument("--fixed-file", required=True, help="Primary fixed image file path")
+    parser.add_argument("--moving-file", required=True, help="Primary moving image file path")
     parser.add_argument("--output", required=True, help="Output image file path")
     parser.add_argument("--registration-method", default="SyNRA", help="Registration method")
     parser.add_argument("--affine-file", help="Affine transformation file path")
@@ -178,9 +214,14 @@ def main():
     parser.add_argument("--rev-warp-file", help="Reverse warp field file path")
     parser.add_argument("--rev-affine-file", help="Reverse affine transformation file path")
     
+    # New arguments for multi-channel registration
+    parser.add_argument("--second-fixed-file", help="Secondary fixed image file path")
+    parser.add_argument("--second-moving-file", help="Secondary moving image file path")
+    parser.add_argument("--metric-weights", nargs=2, type=float, default=[1.0, 1.0], 
+                        help="Weights for each image pair in registration (default: 1.0 1.0)")
+    
     args = parser.parse_args()
     
-    # Call the coregister function with the parsed arguments
     ants_linear_nonlinear_registration(
         fixed_file=args.fixed_file,
         moving_file=args.moving_file,
@@ -189,7 +230,10 @@ def main():
         affine_file=args.affine_file,
         warp_file=args.warp_file,
         rev_warp_file=args.rev_warp_file,
-        rev_affine_file=args.rev_affine_file
+        rev_affine_file=args.rev_affine_file,
+        second_fixed_file=args.second_fixed_file,
+        second_moving_file=args.second_moving_file,
+        metric_weights=args.metric_weights
     )
 
 if __name__ == "__main__":

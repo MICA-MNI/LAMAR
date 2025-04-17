@@ -24,7 +24,7 @@ def lamareg(input_image, reference_image, output_image=None, input_parc=None,
             reference_parc=None, output_parc=None, generate_warpfield=False, apply_warpfield=False,
             registration_method="SyNRA", affine_file=None, warp_file=None,
             inverse_warp_file=None, inverse_affine_file=None, 
-            synthseg_threads=1, ants_threads=1, qc_csv=None):
+            synthseg_threads=1, ants_threads=1, qc_csv=None, skip_segment_moving=None, skip_segment_fixed=None):
     """
     Perform contrast-agnostic registration using SynthSeg parcellation.
     """
@@ -149,26 +149,33 @@ def lamareg(input_image, reference_image, output_image=None, input_parc=None,
         if not apply_warpfield:
             # Step 1: Generate parcellations with SynthSeg if needed
             if input_image is not None:
-                print("\n--- Step 1.1: Generating parcellation for input image ---")
-                subprocess.run([
-                    "lamar", "synthseg",
-                    "--i", input_image,
-                    "--o", input_parc,
-                    "--parc",
-                    "--cpu",
-                    "--threads", str(synthseg_threads)  # Use SynthSeg threads
-                ], check=True, env=env)
-                
+                if not skip_segment_moving:
+                    print("\n--- Step 1.1: Generating parcellation for input image ---")
+                    subprocess.run([
+                        "lamar", "synthseg",
+                        "--i", input_image,
+                        "--o", input_parc,
+                        "--parc",
+                        "--cpu",
+                        "--threads", str(synthseg_threads)  # Use SynthSeg threads
+                    ], check=True, env=env)
+                else:
+                    print("\n--- Step 1.1: Skipping parcellation generation for input image ---")
+                    print("Assuming parcellation already exists at:", input_parc)
             if reference_image is not None:
-                print("\n--- Step 1.2: Generating parcellation for reference image ---")
-                subprocess.run([
-                    "lamar", "synthseg",
-                    "--i", reference_image,
-                    "--o", reference_parc,
-                    "--parc",
-                    "--cpu",
-                    "--threads", str(synthseg_threads)  # Use SynthSeg threads
-                ], check=True, env=env)
+                if not skip_segment_fixed:
+                    print("\n--- Step 1.2: Generating parcellation for reference image ---")
+                    subprocess.run([
+                        "lamar", "synthseg",
+                        "--i", reference_image,
+                        "--o", reference_parc,
+                        "--parc",
+                        "--cpu",
+                        "--threads", str(synthseg_threads)  # Use SynthSeg threads
+                    ], check=True, env=env)
+                else:
+                    print("\n--- Step 1.2: Skipping parcellation generation for reference image ---")
+                    print("Assuming parcellation already exists at:", reference_parc)
 
             # Step 2: Register parcellations using coregister
             print("\n--- Step 2: Coregistering parcellated images ---")
@@ -176,6 +183,8 @@ def lamareg(input_image, reference_image, output_image=None, input_parc=None,
                 "lamar", "coregister",
                 "--fixed-file", reference_parc,
                 "--moving-file", input_parc,
+                "--second-fixed-file", reference_image,
+                "--second-moving-file", input_image,
                 "--output", output_parc,
                 "--registration-method", registration_method,
             ]
@@ -266,7 +275,13 @@ def main():
     parser.add_argument("--synthseg-threads", type=int, default=1, help="Number of threads to use for SynthSeg segmentation")
     parser.add_argument("--ants-threads", type=int, default=1, help="Number of threads to use for ANTs registration")
     parser.add_argument("--qc-csv", help="Path for quality control Dice score CSV file")
-    
+    parser.add_argument(
+        "--skip-segment-moving", action="store_true", help="Skip segmentation of moving image."
+    )
+    parser.add_argument(
+        "--skip-segment-fixed", action="store_true", help="Skip segmentation of fixed image."
+    )
+
     args = parser.parse_args()
     
     # Validate arguments based on workflow
@@ -295,7 +310,9 @@ def main():
         inverse_affine_file=args.inverse_affine,
         synthseg_threads=args.synthseg_threads,
         ants_threads=args.ants_threads,
-        qc_csv=args.qc_csv
+        qc_csv=args.qc_csv,
+        skip_segment_moving=args.skip_segment_moving,
+        skip_segment_fixed=args.skip_segment_fixed
     )
 
 
